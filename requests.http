@@ -1,0 +1,306 @@
+### Tutor API — sample flow (apply-to-teach model)
+### Open in IntelliJ / VS Code REST Client and run top-to-bottom.
+
+@host = http://localhost:8080
+@contentType = application/json
+
+###############################################################################
+# Step 1: Anyone registers (creates a User; everyone starts as a learner)
+###############################################################################
+
+### Register Ada (future tutor)
+# @name registerAda
+POST {{host}}/api/v1/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "ada",
+  "email": "ada@example.com",
+  "password": "Secret123!",
+  "firstName": "Ada",
+  "lastName": "Lovelace",
+  "dateOfBirth": "1990-12-10"
+}
+
+@adaToken = {{registerAda.response.body.data.token}}
+
+### Who am I? (Ada — no tutorProfile yet, no authorities)
+GET {{host}}/api/v1/me
+Authorization: Bearer {{adaToken}}
+
+### Notification counts (everything 0 — Ada isn't a tutor yet, not admin)
+GET {{host}}/api/v1/me/notifications
+Authorization: Bearer {{adaToken}}
+
+###############################################################################
+# Step 2: Ada applies to become a tutor
+###############################################################################
+
+### Submit tutor application
+POST {{host}}/api/v1/me/tutor-application
+Authorization: Bearer {{adaToken}}
+Content-Type: {{contentType}}
+
+{
+  "bio": "Mathematician and computing pioneer",
+  "expertise": "MATH",
+  "qualifications": "MSc Mathematics, University of London",
+  "yearsOfExperience": 10,
+  "hourlyRateCents": 7500
+}
+
+### Check status — should be PENDING
+GET {{host}}/api/v1/me/tutor-application
+Authorization: Bearer {{adaToken}}
+
+### Ada tries to create a course while PENDING — 403
+POST {{host}}/api/v1/courses
+Authorization: Bearer {{adaToken}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Algos",
+  "subject": "COMPUTER_SCIENCE",
+  "level": "BEGINNER",
+  "priceCents": 4999
+}
+
+###############################################################################
+# Step 3: Admin reviews the application
+# (PRECONDITION: provision an admin out-of-band, e.g.
+#  UPDATE users SET admin=TRUE WHERE username='root';
+#  after registering 'root' below.)
+###############################################################################
+
+### Register the admin user (still a regular user until promoted in DB)
+POST {{host}}/api/v1/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "root",
+  "email": "root@example.com",
+  "password": "Secret123!",
+  "firstName": "Root",
+  "lastName": "Admin"
+}
+
+### >>> Run this in MySQL now: UPDATE users SET admin=TRUE WHERE username='root';
+
+### Log in (after promotion) — JWT will carry ROLE_ADMIN
+# @name loginAdmin
+POST {{host}}/api/v1/auth/login
+Content-Type: {{contentType}}
+
+{
+  "username": "root",
+  "password": "Secret123!"
+}
+
+@adminToken = {{loginAdmin.response.body.data.token}}
+
+### List PENDING applications
+# @name listPending
+GET {{host}}/api/v1/admin/tutor-applications?status=PENDING&page=0&size=20
+Authorization: Bearer {{adminToken}}
+
+@applicationId = {{listPending.response.body.data.content[0].id}}
+
+### Approve Ada's application
+POST {{host}}/api/v1/admin/tutor-applications/{{applicationId}}/review
+Authorization: Bearer {{adminToken}}
+Content-Type: {{contentType}}
+
+{
+  "status": "APPROVED"
+}
+
+###############################################################################
+# Step 4: Ada re-logs in — now has ROLE_TUTOR
+###############################################################################
+
+### Re-login to refresh authorities
+# @name loginAda
+POST {{host}}/api/v1/auth/login
+Content-Type: {{contentType}}
+
+{
+  "username": "ada",
+  "password": "Secret123!"
+}
+
+@adaToken2 = {{loginAda.response.body.data.token}}
+
+### /me now shows ROLE_TUTOR + APPROVED tutorProfile
+GET {{host}}/api/v1/me
+Authorization: Bearer {{adaToken2}}
+
+### Edit my tutor profile
+PUT {{host}}/api/v1/tutors/me
+Authorization: Bearer {{adaToken2}}
+Content-Type: {{contentType}}
+
+{
+  "bio": "Math + computing, 10 years experience",
+  "yearsOfExperience": 11,
+  "hourlyRateCents": 8500
+}
+
+### Create a course (tutorId derived from JWT — NOT in body)
+# @name createCourse
+POST {{host}}/api/v1/courses
+Authorization: Bearer {{adaToken2}}
+Content-Type: {{contentType}}
+
+{
+  "title": "Intro to Algorithms",
+  "description": "Sorting, searching, complexity.",
+  "subject": "COMPUTER_SCIENCE",
+  "level": "BEGINNER",
+  "priceCents": 4999
+}
+
+@courseId = {{createCourse.response.body.data.id}}
+
+### List my own courses
+GET {{host}}/api/v1/courses/mine
+Authorization: Bearer {{adaToken2}}
+
+###############################################################################
+# Step 5: Another user (Grace) enrolls in Ada's course
+###############################################################################
+
+### Register Grace (just a learner)
+# @name registerGrace
+POST {{host}}/api/v1/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "grace",
+  "email": "grace@example.com",
+  "password": "Secret123!",
+  "firstName": "Grace",
+  "lastName": "Hopper",
+  "dateOfBirth": "2000-12-09"
+}
+
+@graceToken = {{registerGrace.response.body.data.token}}
+
+### Browse catalog (public, no auth)
+GET {{host}}/api/v1/courses?subject=COMPUTER_SCIENCE&level=BEGINNER
+
+### Course detail (public)
+GET {{host}}/api/v1/courses/{{courseId}}
+
+### Enroll (userId derived from JWT — NOT in body)
+POST {{host}}/api/v1/enrollments
+Authorization: Bearer {{graceToken}}
+Content-Type: {{contentType}}
+
+{
+  "courseId": {{courseId}}
+}
+
+### My enrollments
+GET {{host}}/api/v1/enrollments/mine
+Authorization: Bearer {{graceToken}}
+
+### Mark course as completed
+PATCH {{host}}/api/v1/enrollments/1/status
+Authorization: Bearer {{graceToken}}
+Content-Type: {{contentType}}
+
+{
+  "status": "COMPLETED"
+}
+
+### Re-enroll same course → 409 Conflict
+POST {{host}}/api/v1/enrollments
+Authorization: Bearer {{graceToken}}
+Content-Type: {{contentType}}
+
+{
+  "courseId": {{courseId}}
+}
+
+###############################################################################
+# Step 6: 1:1 tutoring requests — book private sessions with a tutor
+###############################################################################
+
+### Grace sends a tutoring request to Ada (use Ada's TutorProfile id, here from createCourse step or /tutors)
+# @name sendRequest
+POST {{host}}/api/v1/tutoring-requests
+Authorization: Bearer {{graceToken}}
+Content-Type: {{contentType}}
+
+{
+  "tutorId": 1,
+  "subject": "MATH",
+  "message": "Need help with multivariable calculus, weekends preferred."
+}
+
+@requestId = {{sendRequest.response.body.data.id}}
+
+### Grace sees her outgoing requests
+GET {{host}}/api/v1/tutoring-requests/mine
+Authorization: Bearer {{graceToken}}
+
+### Ada sees her incoming requests
+GET {{host}}/api/v1/tutoring-requests/incoming
+Authorization: Bearer {{adaToken2}}
+
+### Ada accepts
+PATCH {{host}}/api/v1/tutoring-requests/{{requestId}}
+Authorization: Bearer {{adaToken2}}
+Content-Type: {{contentType}}
+
+{
+  "status": "ACCEPTED",
+  "tutorReply": "Sounds great — drop me your availability and we'll book a first slot."
+}
+
+### Ada tries to accept again (already terminal) → 422
+PATCH {{host}}/api/v1/tutoring-requests/{{requestId}}
+Authorization: Bearer {{adaToken2}}
+Content-Type: {{contentType}}
+
+{
+  "status": "REJECTED"
+}
+
+### Grace tries to cancel after accept → 422
+DELETE {{host}}/api/v1/tutoring-requests/{{requestId}}
+Authorization: Bearer {{graceToken}}
+
+###############################################################################
+# Negative tests
+###############################################################################
+
+### Unauthenticated write → 401
+POST {{host}}/api/v1/courses
+Content-Type: {{contentType}}
+
+{
+  "title": "Should fail",
+  "subject": "MATH",
+  "level": "BEGINNER",
+  "priceCents": 100
+}
+
+### Missing tutor (non-APPROVED ids return 404) → 404
+GET {{host}}/api/v1/tutors/9999
+
+### Regular user tries to hit admin endpoint → 403
+GET {{host}}/api/v1/admin/tutor-applications
+Authorization: Bearer {{graceToken}}
+
+### Validation error → 400 with fieldErrors
+POST {{host}}/api/v1/auth/register
+Content-Type: {{contentType}}
+
+{
+  "username": "x",
+  "email": "not-an-email",
+  "password": "short",
+  "firstName": "",
+  "lastName": ""
+}
