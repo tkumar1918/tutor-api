@@ -1,16 +1,12 @@
 # =============================================================================
-# Local-dev orchestration for the tutor stack.
-#
-#   Backend  → http://localhost:8080         (Spring Boot, profile=dev)
-#   Frontend → http://localhost:5173         (Vite build served by nginx)
-#   Database → Supabase (cloud, configured via .env)
+# Backend-only orchestration. The frontend has its own docker-compose.yml in
+# the tutor-ui repo — run both with two `docker compose up` invocations if you
+# want the full stack locally.
 #
 # Quick start:
 #   1. Copy `.env.example` → `.env` and fill in real values.
-#   2. Make sure the frontend repo is cloned as a sibling: `../tutor-ui`.
-#   3. `docker compose up --build`
-#
-# If you only have the backend, comment out the `frontend` service.
+#   2. `docker compose up --build`
+#   3. Open http://localhost:8080/swagger-ui.html
 # =============================================================================
 
 services:
@@ -42,21 +38,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-  frontend:
-    build:
-      context: ../tutor-ui
-      dockerfile: Dockerfile
-      args:
-        # Vite bakes the API URL into the bundle at build time. Since API calls
-        # happen from the browser (not from the frontend container), the URL must
-        # be reachable from the host — `http://localhost:8080`, NOT `http://backend:8080`.
-        VITE_API_BASE_URL: http://localhost:8080
-    image: tutor-ui:dev
-    container_name: tutor-ui
-    ports:
-      - "5173:80"
-    restart: unless-stopped
-    depends_on:
-      backend:
-        condition: service_started

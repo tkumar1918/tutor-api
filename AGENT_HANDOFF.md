@@ -5,15 +5,67 @@
 **From:** Backend Agent
 **To:** Frontend Agent
 
-> **(1) New: action-pending counter `GET /api/v1/me/notifications` → `{tutorPendingRequests, adminPendingApplications}`. Drive nav badges off this — render only when count > 0. Not a notification system (no read/unread); counts drop when items leave PENDING. Re-fetch after `PATCH /tutoring-requests/{id}` and `POST /admin/tutor-applications/{id}/review`.**
+> **(1) Backend has its own `docker-compose.yml`** at the repo root, plus `Dockerfile` (Alpine, multi-stage, ~434 MB) and `.env.example`. **Ask: please add your own `docker-compose.yml` in the tutor-ui repo for the frontend.** Backend now talks to **Postgres / Supabase** (no more MySQL) — connection is wired via `.env` (gitignored). Build with `docker compose up --build` in each repo independently. Two terminals = full stack.
 >
-> **(2) Open ask: the user finds the browser-bar URLs (`/me`, `/me/edit`, `/my-requests`, `/tutor-inbox`, `/courses/mine`, `/enrollments/mine`) clunky. See "Route-rename suggestions" in Full History — your call on which to adopt. Backend API paths are NOT changing in this round, so this is purely a frontend routing rename.**
+> **(2) Open: route-rename suggestions still pending** (`/me` → `/profile`, `/my-requests` → `/inbox/sent`, etc. — full table in Full History → round 3). Your call.
+>
+> **(3) Earlier: action-pending counter** `GET /api/v1/me/notifications` → `{tutorPendingRequests, adminPendingApplications}`. Drive nav badges; re-fetch after `PATCH /tutoring-requests/{id}` and `POST /admin/tutor-applications/{id}/review`.
 >
 > 12/12 backend tests green.
 
 ---
 
 ## 📜 Full History (Backend → Frontend)
+
+### Backend → Frontend (2026-06-02) — round 4
+**From:** Backend Agent
+
+**Round: containerization (backend-only) + DB migration to Postgres / Supabase**
+
+**What landed in the backend repo:**
+- `Dockerfile` — Alpine multi-stage, Spring Boot layered JAR, non-root user, JVM tuned for low-traffic showcase (MaxRAMPercentage=75, SerialGC, TieredStopAtLevel=1). Final image ~434 MB; boots in ~4 s; idles at ~260 MiB.
+- `docker-compose.yml` — **backend service only.** Reads `.env` for `SPRING_DATASOURCE_URL` / `DB_USER` / `DB_PASSWORD` / `JWT_*`. Publishes 8080. mem_limit 384m. Healthcheck on `/v3/api-docs`.
+- `.env.example` — tracked template; real `.env` is gitignored.
+- Backend repo is now **fully self-contained** for `docker compose up`.
+
+**Database: MySQL → Postgres** (transparent to the API contract, no schema changes you'd notice):
+- pom.xml: `mysql-connector-j` → `org.postgresql:postgresql`
+- application-test.properties: H2 `MODE=PostgreSQL` so tests match prod dialect
+- data.sql: `NOW(6)` → `NOW()` (Postgres ignores precision args on `NOW()`)
+- Tests: 12/12 green.
+
+**Ask for you:** please add a `docker-compose.yml` in the tutor-ui repo for the frontend. Backend-side compose **deliberately does not reference `../tutor-ui`** anymore — each repo owns its own container orchestration so they stay independently cloneable.
+
+Suggested shape for your compose (just a starting point, do whatever fits):
+
+```yaml
+services:
+  frontend:
+    build:
+      context: .
+      args:
+        VITE_API_BASE_URL: http://localhost:8080
+    image: tutor-ui:dev
+    container_name: tutor-ui
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+```
+
+(Vite bakes `VITE_API_BASE_URL` at build time; since API calls happen from the browser — not the container — `http://localhost:8080` is the right value.)
+
+**Local full-stack dev flow** (two terminals):
+```bash
+# Terminal 1
+cd tutor-api && docker compose up --build
+
+# Terminal 2
+cd tutor-ui && docker compose up --build
+```
+
+**Supabase note:** the backend talks to Supabase Postgres in the user's local setup. Direct host (`db.<ref>.supabase.co:5432`) is IPv6-only — must use the transaction pooler (`aws-0-<region>.pooler.supabase.com:6543`) from Docker. Doesn't affect your work, just FYI if you ever wire your frontend to talk to Supabase directly.
+
+---
 
 ### Backend → Frontend (2026-06-01) — round 3 (suggestion only, no code change)
 **From:** Backend Agent
