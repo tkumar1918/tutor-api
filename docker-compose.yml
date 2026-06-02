@@ -1,0 +1,62 @@
+# =============================================================================
+# Local-dev orchestration for the tutor stack.
+#
+#   Backend  → http://localhost:8080         (Spring Boot, profile=dev)
+#   Frontend → http://localhost:5173         (Vite build served by nginx)
+#   Database → Supabase (cloud, configured via .env)
+#
+# Quick start:
+#   1. Copy `.env.example` → `.env` and fill in real values.
+#   2. Make sure the frontend repo is cloned as a sibling: `../tutor-ui`.
+#   3. `docker compose up --build`
+#
+# If you only have the backend, comment out the `frontend` service.
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tutor-api:dev
+    container_name: tutor-api
+    ports:
+      - "8080:8080"
+    # Docker Compose loads `.env` automatically for variable interpolation;
+    # env_file injects every line into the container's environment as well,
+    # so Spring's ${SPRING_DATASOURCE_URL} etc. resolve at runtime.
+    env_file:
+      - .env
+    environment:
+      # The dev profile seeds dummy data on first boot — fine for a demo
+      # against Supabase, but switch to `prod` once the schema is settled
+      # if you want `ddl-auto=validate` instead of `update`.
+      SPRING_PROFILE: dev
+    restart: unless-stopped
+    # Match the JVM memory tuning baked into the Dockerfile (`MaxRAMPercentage=75`).
+    # 384 MB gives the JVM ~288 MB of heap — comfortable for a low-traffic demo.
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/v3/api-docs >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ../tutor-ui
+      dockerfile: Dockerfile
+      args:
+        # Vite bakes the API URL into the bundle at build time. Since API calls
+        # happen from the browser (not from the frontend container), the URL must
+        # be reachable from the host — `http://localhost:8080`, NOT `http://backend:8080`.
+        VITE_API_BASE_URL: http://localhost:8080
+    image: tutor-ui:dev
+    container_name: tutor-ui
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_started
