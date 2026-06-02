@@ -40,15 +40,15 @@ One human can be both — register, enroll in some courses (learner mode), and l
 ## Prerequisites
 
 - **JDK 25** (or set `JAVA_HOME` to whichever JDK ≥ 17 you use after editing `<java.version>` in [pom.xml](pom.xml))
-- **MySQL 8** running locally on `:3306` (or override `DB_*` env vars)
+- **Postgres 14+** reachable on `:5432` — local container, system install, or a hosted Postgres (Supabase / Neon / RDS). Override the connection via `SPRING_DATASOURCE_URL` + `DB_USER` + `DB_PASSWORD`.
 - Maven wrapper (`./mvnw`) — no separate Maven install needed
 
 ## Quickstart
 
 ```bash
-# 1. Start MySQL (skip if already running)
-docker run -d --name tutor-mysql -p 3306:3306 \
-  -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=tutor_api mysql:8
+# 1. Start Postgres (skip if you already have one, or use Supabase — see below)
+docker run -d --name tutor-pg -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=tutor_api postgres:16
 
 # 2. Run the app — the `dev` profile auto-seeds dummy data on first boot
 ./mvnw spring-boot:run
@@ -56,6 +56,19 @@ docker run -d --name tutor-mysql -p 3306:3306 \
 # 3. Open Swagger UI
 open http://localhost:8080/swagger-ui.html
 ```
+
+### Running against Supabase
+
+Create a project at [supabase.com](https://supabase.com), grab the JDBC URL from *Project Settings → Database*, then:
+
+```bash
+export SPRING_DATASOURCE_URL='jdbc:postgresql://db.<project-ref>.supabase.co:5432/postgres?sslmode=require'
+export DB_USER=postgres
+export DB_PASSWORD='<your-project-password>'
+./mvnw spring-boot:run
+```
+
+Supabase also exposes a connection pooler on `:6543` (transaction mode) — fine for stateless apps like this, and required if you ever expect more than ~60 concurrent connections.
 
 ### Seeded accounts (dev profile only)
 
@@ -74,8 +87,8 @@ The app runs [`src/main/resources/data.sql`](src/main/resources/data.sql) at sta
 To wipe and re-seed cleanly:
 
 ```bash
-docker exec tutor-mysql mysql -uroot -proot \
-  -e 'DROP DATABASE tutor_api; CREATE DATABASE tutor_api;'
+docker exec -it tutor-pg psql -U postgres -c \
+  'DROP DATABASE tutor_api; CREATE DATABASE tutor_api;'
 # Restart the app — Hibernate recreates the schema and data.sql refills it.
 ```
 
@@ -87,8 +100,9 @@ Override via env vars (defaults shown):
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DB_USER` | `root` | MySQL username |
-| `DB_PASSWORD` | `root` | MySQL password |
+| `SPRING_DATASOURCE_URL` | `jdbc:postgresql://localhost:5432/tutor_api` | Full JDBC URL — point at Supabase / Neon / RDS here |
+| `DB_USER` | `postgres` | Postgres role |
+| `DB_PASSWORD` | `postgres` | Postgres password |
 | `JWT_SECRET` | dev value | Base64-encoded HS256 secret (use 256+ bits in prod) |
 | `JWT_EXPIRATION_MS` | `3600000` | 1 hour |
 | `SPRING_PROFILE` | `dev` | `dev` (SQL logs) or `prod` (strict) |
