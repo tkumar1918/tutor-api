@@ -43,24 +43,28 @@ One human can be both — register, enroll in some courses (learner mode), and l
 - **MySQL 8** reachable on `:3306` — easiest path is a Docker container (one line below)
 - Maven wrapper (`./mvnw`) — no separate Maven install needed
 
-## Quickstart — two options
+## Quickstart
 
-**Option A: Full stack via Docker Compose (recommended — one command)**
+The backend needs a MySQL it can reach. Pick one of:
+
+**Option A — Hosted MySQL (Aiven / RDS / DigitalOcean / etc.)**
 
 ```bash
-cp .env.example .env          # contains sensible local-dev defaults
-docker compose up --build     # starts MySQL + backend together
+cp .env.example .env
+# Edit .env: set SPRING_DATASOURCE_URL + DB_USER + DB_PASSWORD to your hosted MySQL.
+# See .env.example for the exact shape, including the Aiven-style sslMode=REQUIRED URL.
+docker compose up --build
 open http://localhost:8080/swagger-ui.html
 ```
 
-**Option B: Backend on your host, MySQL in a container**
+**Option B — Local MySQL in a container**
 
 ```bash
-# 1. Start MySQL (skip if you already have one)
+# 1. Start MySQL
 docker run -d --name tutor-mysql -p 3306:3306 \
   -e MYSQL_ROOT_PASSWORD=root -e MYSQL_DATABASE=tutor_api mysql:8
 
-# 2. Run the app — the `dev` profile auto-seeds dummy data on first boot
+# 2. Run the app on your host (default JDBC URL points at localhost:3306)
 ./mvnw spring-boot:run
 
 # 3. Open Swagger UI
