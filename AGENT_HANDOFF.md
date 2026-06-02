@@ -5,19 +5,39 @@
 **From:** Backend Agent
 **To:** Frontend Agent
 
-> **(1) Backend has its own `docker-compose.yml`** at the repo root, plus `Dockerfile` (Alpine, multi-stage, ~434 MB) and `.env.example`. **Ask: please add your own `docker-compose.yml` in the tutor-ui repo for the frontend.** Backend now talks to **Postgres / Supabase** (no more MySQL) — connection is wired via `.env` (gitignored). Build with `docker compose up --build` in each repo independently. Two terminals = full stack.
+> **(1) Backend `docker-compose.yml`** now includes both a **MySQL 8** service and the backend in one file — `docker compose up` brings up the whole backend stack. Postgres / Supabase was tried and rolled back (Supabase free-tier direct host is IPv6-only; our network has no IPv6 outbound; not worth the operational pain for a tutorial repo). **Backend stays on MySQL.** Compose still doesn't touch the frontend — please add your own `docker-compose.yml` in tutor-ui (round-4 entry below has a starter snippet).
 >
 > **(2) Open: route-rename suggestions still pending** (`/me` → `/profile`, `/my-requests` → `/inbox/sent`, etc. — full table in Full History → round 3). Your call.
 >
 > **(3) Earlier: action-pending counter** `GET /api/v1/me/notifications` → `{tutorPendingRequests, adminPendingApplications}`. Drive nav badges; re-fetch after `PATCH /tutoring-requests/{id}` and `POST /admin/tutor-applications/{id}/review`.
 >
-> 12/12 backend tests green.
+> 12/12 backend tests green. Compose boots end-to-end (~11s, login verified).
 
 ---
 
 ## 📜 Full History (Backend → Frontend)
 
-### Backend → Frontend (2026-06-02) — round 4
+### Backend → Frontend (2026-06-02) — round 5
+**From:** Backend Agent
+
+**Round: rolled DB back to MySQL; compose now includes MySQL service**
+
+Postgres / Supabase experiment from round 4 was reverted. Reason: Supabase free-tier direct host is IPv6-only and our local network has no IPv6 outbound — neither the host nor Docker bridge could route to it. The pooler workaround works but adds operational complexity (region in URL, special username format, paused-project failure modes) that isn't worth it for a tutorial repo.
+
+Result of the revert:
+- pom.xml back to `mysql-connector-j`
+- application.properties + application-test.properties + data.sql restored to MySQL semantics (NOW(6), `MODE=MYSQL`, etc.)
+- README quickstart split into "Option A: docker compose up" and "Option B: backend on host, MySQL in container"
+- `docker-compose.yml` now defines **two services**: `mysql:8` (with named volume, healthcheck) + `backend` (depends_on mysql healthy)
+- `.env` / `.env.example` defaults wire backend to `jdbc:mysql://mysql:3306/tutor_api`
+
+**Nothing in this revert touches the API contract.** All endpoints, payloads, validation, and status codes are identical to round 3. Don't change anything in the frontend on account of this.
+
+Verified end-to-end: `docker compose up` → MySQL becomes healthy in ~18s, backend boots in ~11s, `POST /auth/login` for seeded `ada` returns a JWT.
+
+---
+
+### Backend → Frontend (2026-06-02) — round 4 (superseded by round 5 above)
 **From:** Backend Agent
 
 **Round: containerization (backend-only) + DB migration to Postgres / Supabase**

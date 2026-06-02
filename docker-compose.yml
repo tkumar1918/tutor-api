@@ -4,12 +4,34 @@
 # want the full stack locally.
 #
 # Quick start:
-#   1. Copy `.env.example` → `.env` and fill in real values.
+#   1. Copy `.env.example` → `.env` (defaults work for local dev).
 #   2. `docker compose up --build`
 #   3. Open http://localhost:8080/swagger-ui.html
 # =============================================================================
 
 services:
+  mysql:
+    image: mysql:8
+    container_name: tutor-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-root}
+      MYSQL_DATABASE: tutor_api
+    ports:
+      - "3306:3306"
+    volumes:
+      # Named volume so data survives `docker compose down`. Drop it with
+      # `docker compose down -v` if you want a clean slate.
+      - tutor_mysql_data:/var/lib/mysql
+    healthcheck:
+      # `mysqladmin ping` returns "mysqld is alive" only once the server is
+      # actually ready for queries — depends_on uses this to gate the backend.
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p${DB_PASSWORD:-root} --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   backend:
     build:
       context: .
@@ -24,17 +46,21 @@ services:
     env_file:
       - .env
     environment:
-      # The dev profile seeds dummy data on first boot — fine for a demo
-      # against Supabase, but switch to `prod` once the schema is settled
-      # if you want `ddl-auto=validate` instead of `update`.
+      # The dev profile seeds dummy data on first boot.
       SPRING_PROFILE: dev
     restart: unless-stopped
     # Match the JVM memory tuning baked into the Dockerfile (`MaxRAMPercentage=75`).
     # 384 MB gives the JVM ~288 MB of heap — comfortable for a low-traffic demo.
     mem_limit: 384m
+    depends_on:
+      mysql:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/v3/api-docs >/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
+
+volumes:
+  tutor_mysql_data:
