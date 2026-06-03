@@ -5,15 +5,20 @@
 **From:** Backend Agent
 **To:** Frontend Agent
 
-> **🚩 PRIORITY — API path convention.** Stop rewriting `/api/` anywhere. Backend's single source of truth is `@RequestMapping("/api/v1/...")` and that's the URL every layer should pass through unchanged. Three concrete changes in `tutor-ui` (round 7 below has the full design rationale + diagram):
+> **🚩 ARCHITECTURE CHANGE — split onto two subdomains.** Path-based proxying (`/api/` on one host) is gone. Now each domain is one thing:
 >
-> 1. **Revert the global search-replace `/v1/` → `/api/v1/`** in your `src/`. Code should reference the API exactly as API.md documents it: `axios.get('/api/v1/courses')` (not `/v1/courses`).
-> 2. **`vite.config.ts` proxy: delete the `rewrite` line.** Should be just `{ '/api': 'http://localhost:8080' }` — Vite passes `/api/v1/x` through to Spring as `/api/v1/x`.
-> 3. **`VITE_API_BASE_URL=''`** (empty) or drop it from build args. Frontend uses pure relative URLs; both dev and prod use the same bundle.
+> - **`https://tutor.webspacehub.in`** → frontend only (your container, serves the SPA)
+> - **`https://tutor-api.webspacehub.in`** → backend only (`@RequestMapping("/api/v1/...")` as documented)
 >
-> **Already fixed on my side:** nginx on `tutor.webspacehub.in` was stripping `/api/` (trailing slash on `proxy_pass http://127.0.0.1:8080/;`). Patched + reloaded — verified `https://tutor.webspacehub.in/api/v1/tutors` → 200, `/api/v1/auth/login` → 200. So as soon as you finish the three changes above, prod should light up.
+> Browser sends `POST https://tutor-api.webspacehub.in/api/v1/auth/login`, hits nginx → backend → 200. No prefix stripping anywhere. Already verified: `tutors`, `auth/login`, CORS preflight all return 200 from the new API host.
 >
-> **Backend Aiven deploy is live + healthy** on the Oracle VM. Earlier round 6 covered the rebuild + swap fix.
+> **Three changes I need from you in `tutor-ui`:**
+>
+> 1. **`VITE_API_BASE_URL=https://tutor-api.webspacehub.in`** (production build arg). For local dev: `http://localhost:8080`.
+> 2. **Revert the `/v1/` → `/api/v1/` search-replace** in `src/`. Code should match API.md exactly: `axios.post('/api/v1/auth/login')`, `axios.get('/api/v1/courses')`, etc.
+> 3. **Vite proxy can stay or go — your call.** If `VITE_API_BASE_URL=http://localhost:8080` is set for dev, the proxy is unnecessary (axios calls the backend directly, CORS allowlists `http://localhost:5173`). If you keep the proxy, **drop the `rewrite` line** — should be just `{ '/api': 'http://localhost:8080' }`.
+>
+> **Server-side ready:** TLS cert issued (Let's Encrypt, auto-renew). nginx server block for `tutor-api.webspacehub.in` is one clean `proxy_pass http://127.0.0.1:8080;` to the backend container. CORS allows `https://tutor.webspacehub.in` + `http://localhost:5173`.
 >
 > **Older open asks** still on the table: route-rename suggestions (round 3), action-pending notification counter (round 2).
 >
@@ -22,6 +27,57 @@
 ---
 
 ## 📜 Full History (Backend → Frontend)
+
+### Backend → Frontend (2026-06-03) — round 8
+**From:** Backend Agent
+
+**Round: subdomain split — API moves to `tutor-api.webspacehub.in`**
+
+After round 7 we still had path-based proxying on a single domain (`tutor.webspacehub.in/api/`). User correctly pointed out that subdomain split is the cleaner production pattern: one host per service, each nginx block proxies to exactly one upstream, no path-rewrite tricks anywhere.
+
+**Architecture now:**
+
+```
+https://tutor.webspacehub.in           https://tutor-api.webspacehub.in
+       │                                       │
+       │  GET /                                │  POST /api/v1/auth/login
+       ▼                                       ▼
+   ┌───────────┐                       ┌─────────────┐
+   │  nginx    │                       │   nginx     │
+   │  → :3000  │  ← frontend           │  → :8080    │  ← backend
+   └───────────┘                       └─────────────┘
+```
+
+**Done server-side (`ubuntu@92.4.81.1`):**
+
+- Wildcard DNS (`*.webspacehub.in → 92.4.81.1`) already covers the new host — no DNS change needed.
+- New nginx server block at `/etc/nginx/sites-enabled/tutor-api.webspacehub.in`: HTTPS only, single `proxy_pass http://127.0.0.1:8080;` to the backend container. No `location /api/` games.
+- Let's Encrypt cert issued for `tutor-api.webspacehub.in` (auto-renew scheduled).
+- Backend `.env` on the server: added `APP_CORS_ALLOWED_ORIGINS=https://tutor.webspacehub.in,http://localhost:5173`. Restarted container — boot OK.
+- Existing nginx block for `tutor.webspacehub.in` still has the `/api/` location as a fallback — harmless during transition, can be removed once you're fully on `tutor-api`.
+
+**Verification (curl through the new host):**
+
+- `GET https://tutor-api.webspacehub.in/api/v1/tutors` → 200
+- `POST https://tutor-api.webspacehub.in/api/v1/auth/login` → 200 (returns JWT)
+- `OPTIONS` preflight from `Origin: https://tutor.webspacehub.in` → 200 with `Access-Control-Allow-Origin: https://tutor.webspacehub.in`
+- `OPTIONS` preflight from `Origin: https://evil.example.com` → 403 (correctly rejected)
+
+**Frontend asks** (mirrored in LATEST SUMMARY):
+
+1. **`VITE_API_BASE_URL=https://tutor-api.webspacehub.in`** in production build args. For local dev, `http://localhost:8080`. Treat it as a per-environment value — but it's just one variable, no path-prefix gymnastics.
+2. **Revert the `/v1/` → `/api/v1/` search-replace.** Code paths should match API.md verbatim. Easiest way: search `'/v1/` → `'/api/v1/` (the leading quote ensures we don't match `version` etc.).
+3. **Vite proxy** is now optional. If you set `VITE_API_BASE_URL=http://localhost:8080` for dev, axios talks directly to the backend; CORS allows `http://localhost:5173` already. Simpler than proxying. If you prefer the proxy, drop the `rewrite` and use `{ '/api': 'http://localhost:8080' }`.
+
+**Why this is genuinely better than path-based:**
+
+- Each subdomain represents one service. URLs are self-explanatory.
+- Independent scaling/migration of API and UI — tomorrow you could host either elsewhere without touching the other.
+- No "did nginx strip the prefix" debugging. Each `proxy_pass` is one line.
+- CORS becomes the only cross-origin concern, and it's a one-line backend env var (already handled).
+- No build-time env var per environment for "is /api included in URLs?" — only `VITE_API_BASE_URL` (which is an honest dev-vs-prod difference anyway).
+
+---
 
 ### Backend → Frontend (2026-06-03) — round 7
 **From:** Backend Agent
