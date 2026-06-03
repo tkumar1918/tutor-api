@@ -1,21 +1,103 @@
 # 🔄 Backend Agent Handoff
 
 ## 📍 LATEST SUMMARY (READ THIS FIRST!)
-**Updated:** 2026-06-01
+**Updated:** 2026-06-03
 **From:** Backend Agent
 **To:** Frontend Agent
 
-> **(1) Backend `docker-compose.yml`** now includes both a **MySQL 8** service and the backend in one file — `docker compose up` brings up the whole backend stack. Postgres / Supabase was tried and rolled back (Supabase free-tier direct host is IPv6-only; our network has no IPv6 outbound; not worth the operational pain for a tutorial repo). **Backend stays on MySQL.** Compose still doesn't touch the frontend — please add your own `docker-compose.yml` in tutor-ui (round-4 entry below has a starter snippet).
+> **🚩 PRIORITY — API path convention.** Stop rewriting `/api/` anywhere. Backend's single source of truth is `@RequestMapping("/api/v1/...")` and that's the URL every layer should pass through unchanged. Three concrete changes in `tutor-ui` (round 7 below has the full design rationale + diagram):
 >
-> **(2) Open: route-rename suggestions still pending** (`/me` → `/profile`, `/my-requests` → `/inbox/sent`, etc. — full table in Full History → round 3). Your call.
+> 1. **Revert the global search-replace `/v1/` → `/api/v1/`** in your `src/`. Code should reference the API exactly as API.md documents it: `axios.get('/api/v1/courses')` (not `/v1/courses`).
+> 2. **`vite.config.ts` proxy: delete the `rewrite` line.** Should be just `{ '/api': 'http://localhost:8080' }` — Vite passes `/api/v1/x` through to Spring as `/api/v1/x`.
+> 3. **`VITE_API_BASE_URL=''`** (empty) or drop it from build args. Frontend uses pure relative URLs; both dev and prod use the same bundle.
 >
-> **(3) Earlier: action-pending counter** `GET /api/v1/me/notifications` → `{tutorPendingRequests, adminPendingApplications}`. Drive nav badges; re-fetch after `PATCH /tutoring-requests/{id}` and `POST /admin/tutor-applications/{id}/review`.
+> **Already fixed on my side:** nginx on `tutor.webspacehub.in` was stripping `/api/` (trailing slash on `proxy_pass http://127.0.0.1:8080/;`). Patched + reloaded — verified `https://tutor.webspacehub.in/api/v1/tutors` → 200, `/api/v1/auth/login` → 200. So as soon as you finish the three changes above, prod should light up.
 >
-> 12/12 backend tests green. Compose boots end-to-end (~11s, login verified).
+> **Backend Aiven deploy is live + healthy** on the Oracle VM. Earlier round 6 covered the rebuild + swap fix.
+>
+> **Older open asks** still on the table: route-rename suggestions (round 3), action-pending notification counter (round 2).
+>
+> 12/12 backend tests green.
 
 ---
 
 ## 📜 Full History (Backend → Frontend)
+
+### Backend → Frontend (2026-06-03) — round 7
+**From:** Backend Agent
+
+**Round: API path convention — stop rewriting `/api/` in every layer**
+
+We accumulated a stack of well-meaning hacks across rounds (build-time `VITE_API_BASE_URL`, Vite proxy `rewrite`, nginx `proxy_pass http://...:8080/;` trailing slash, axios baseURL set to `/api`, search-replace of `/api/v1/` → `/v1/` in the codebase). Each one fixed the symptom of the last. Today's debug session showed the cumulative effect:
+
+```
+Browser → /api/v1/me/notifications
+        Vite dev proxy  rewrite: path.replace(/^\/api/, '')  ← STRIP
+        nginx (prod)    proxy_pass http://...:8080/;        ← STRIP
+Backend gets: /v1/me/notifications → NoResourceFoundException 404
+```
+
+The conventional pattern is dead simple and the user explicitly asked for it: **one place owns the API path, everyone else is transparent.**
+
+```
+Browser address bar:  https://tutor.webspacehub.in
+                              │
+                              │  fetch('/api/v1/courses')   ← relative URL, no origin baked in
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│ Production:  nginx → location /api/ { proxy_pass …:8080; }       │ ← no trailing /
+│ Dev:         Vite  → server.proxy = { '/api': 'http://…:8080' }  │ ← no rewrite
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              │  GET /api/v1/courses  (unchanged)
+                              ▼
+                Spring  @RequestMapping("/api/v1/courses")
+```
+
+**Why this beats every variant:**
+- One source of truth: backend `@RequestMapping`. API.md mirrors it.
+- Same bundle in dev and prod; no build-time env var per env.
+- Same-origin in the browser → no CORS preflights → fewer headers to debug.
+- No string concatenation means no double-prefix bugs (`/api/api/...`).
+
+**Concrete asks on your side (the three changes mentioned in LATEST SUMMARY):**
+
+1. **Revert the search-replace.** In `tutor-ui/src/`, run the reverse: `/v1/` → `/api/v1/`. Every API path in `api.ts`, hooks, etc. should match what API.md documents (`/api/v1/courses`, `/api/v1/me/notifications`, etc.).
+2. **`vite.config.ts`** — proxy block becomes:
+   ```ts
+   server: {
+     proxy: {
+       '/api': 'http://localhost:8080',   // no rewrite
+     }
+   }
+   ```
+3. **`VITE_API_BASE_URL=''`** (empty) — or remove from `Dockerfile` ARG / compose build args. Axios baseURL becomes `''`. All requests are pure paths: `axios.get('/api/v1/courses')`. The same bundle works on `http://localhost:5173` (Vite proxy handles `/api/`), `https://tutor.webspacehub.in` (nginx handles `/api/`), or any other origin you deploy under — without rebuilding.
+
+**Already done on my side (so you can test immediately after your changes):**
+- nginx on the prod server (`tutor.webspacehub.in`): removed trailing slash on `proxy_pass`, validated, reloaded. Confirmed `https://tutor.webspacehub.in/api/v1/tutors` → 200 and `/api/v1/auth/login` → 200 through nginx.
+- Backed up the prior nginx config to `/etc/nginx/site-backups/` in case we ever need to roll back.
+
+After your three changes land, the deployed UI at `https://tutor.webspacehub.in/` should be fully functional end-to-end without any further server work.
+
+---
+
+### Backend → Frontend (2026-06-02) — round 6
+**From:** Backend Agent
+
+**Round: deployment fixes on `ubuntu@92.4.81.1` (Oracle Cloud, 954 MiB RAM)**
+
+What I did on the server (backend-side only, didn't touch your repo):
+
+- **Diagnosed** `tutor-api Exited (137)`. Real cause was `ClassNotFoundException: com.mysql.cj.jdbc.Driver` — the image was built when we were briefly on Postgres and never rebuilt after the MySQL revert. Exit 137 was Docker's restart-loop reaper.
+- **Added 2 GiB swap** at `/swapfile` and persisted in `/etc/fstab`. Without it, `docker compose build` was hitting OOM during the Maven compile (~600–800 MiB peak vs. ~450 MiB free).
+- **Rebuilt + restarted** `tutor-api` via `docker compose up -d --build`. Boots in 38 s, login HTTP 200 via nginx, hitting Aiven MySQL.
+
+What you'll see / what's yours to fix:
+
+- **`tutor-ui` is in "unhealthy" state for ~4 hours.** Container is up but its own healthcheck fails. I left it untouched.
+- **nginx routing mismatch:** see round 7 above for the resolution. The "frontend listens on 5173 but nginx expects 3000" observation from earlier was actually moot once we settled the `/api/` strip issue — nginx's `/` location proxies to wherever your container is listening; happy to update it to match whatever port you publish.
+
+---
 
 ### Backend → Frontend (2026-06-02) — round 5
 **From:** Backend Agent
