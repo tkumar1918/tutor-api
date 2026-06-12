@@ -1,6 +1,7 @@
 # =============================================================================
-# Backend + a local MariaDB database, orchestrated together. The DB runs in the
-# `mariadb` service below; its data persists in the `mariadb-data` volume.
+# Backend-only orchestration. The database is NOT managed here — point the
+# backend at whatever DB you like via DB_URL in .env (a hosted MariaDB, or a
+# MariaDB you run separately).
 #
 # The frontend has its own docker-compose.yml in the tutor-ui repo.
 #
@@ -11,26 +12,6 @@
 # =============================================================================
 
 services:
-  mariadb:
-    image: mariadb:11.4
-    container_name: tutor-mariadb
-    environment:
-      # Must match DB_USER / DB_PASS in .env (root/root for local dev).
-      MARIADB_ROOT_PASSWORD: ${DB_PASS:-root}
-      MARIADB_DATABASE: tutor_api
-    ports:
-      # Published so a host-side `./mvnw spring-boot:run` can reach it too.
-      - "3306:3306"
-    volumes:
-      - mariadb-data:/var/lib/mysql
-    healthcheck:
-      # Ships with the mariadb image; checks the server is up and InnoDB ready.
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
-
   backend:
     build:
       context: .
@@ -41,18 +22,12 @@ services:
       - "8080:8080"
     # Docker Compose loads `.env` automatically for variable interpolation;
     # env_file injects every line into the container's environment as well,
-    # so Spring's ${SPRING_DATASOURCE_URL} etc. resolve at runtime.
+    # so Spring's ${DB_URL} etc. resolve at runtime.
     env_file:
       - .env
     environment:
       # The dev profile seeds dummy data on first boot.
       SPRING_PROFILE: dev
-      # Inside the compose network the DB is reachable at host `mariadb`, not
-      # localhost — override the .env URL (which targets localhost for host runs).
-      DB_URL: jdbc:mariadb://mariadb:3306/tutor_api?createDatabaseIfNotExist=true&serverTimezone=UTC
-    depends_on:
-      mariadb:
-        condition: service_healthy
     restart: unless-stopped
     # Match the JVM memory tuning baked into the Dockerfile (`MaxRAMPercentage=75`).
     # 384 MB gives the JVM ~288 MB of heap — comfortable for a low-traffic demo.
@@ -63,6 +38,3 @@ services:
       timeout: 5s
       retries: 3
       start_period: 30s
-
-volumes:
-  mariadb-data:
