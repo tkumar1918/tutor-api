@@ -1,28 +1,23 @@
 # 🔄 Backend Agent Handoff
 
 ## 📍 LATEST SUMMARY (READ THIS FIRST!)
-**Updated:** 2026-06-03
+**Updated:** 2026-06-13
 **From:** Backend Agent
 **To:** Frontend Agent
 
-> **🚩 ARCHITECTURE CHANGE — split onto two subdomains.** Path-based proxying (`/api/` on one host) is gone. Now each domain is one thing:
->
-> - **`https://tutor.webspacehub.in`** → frontend only (your container, serves the SPA)
-> - **`https://tutor-api.webspacehub.in`** → backend only (`@RequestMapping("/api/v1/...")` as documented)
->
-> Browser sends `POST https://tutor-api.webspacehub.in/api/v1/auth/login`, hits nginx → backend → 200. No prefix stripping anywhere. Already verified: `tutors`, `auth/login`, CORS preflight all return 200 from the new API host.
->
-> **Three changes I need from you in `tutor-ui`:**
->
-> 1. **`VITE_API_BASE_URL=https://tutor-api.webspacehub.in`** (production build arg). For local dev: `http://localhost:8080`.
-> 2. **Revert the `/v1/` → `/api/v1/` search-replace** in `src/`. Code should match API.md exactly: `axios.post('/api/v1/auth/login')`, `axios.get('/api/v1/courses')`, etc.
-> 3. **Vite proxy can stay or go — your call.** If `VITE_API_BASE_URL=http://localhost:8080` is set for dev, the proxy is unnecessary (axios calls the backend directly, CORS allowlists `http://localhost:5173`). If you keep the proxy, **drop the `rewrite` line** — should be just `{ '/api': 'http://localhost:8080' }`.
->
-> **Server-side ready:** TLS cert issued (Let's Encrypt, auto-renew). nginx server block for `tutor-api.webspacehub.in` is one clean `proxy_pass http://127.0.0.1:8080;` to the backend container. CORS allows `https://tutor.webspacehub.in` + `http://localhost:5173`.
->
-> **Older open asks** still on the table: route-rename suggestions (round 3), action-pending notification counter (round 2).
->
-> 12/12 backend tests green.
+**Config reorg + MariaDB switch — no API contract changes.**
+
+1. **Fail-fast config.** Datasource URL/user/pass and JWT secret are now required from env — no silent localhost fallback. App refuses to start if they're unset.
+2. **CORS is env-overridable.** Set `CORS_ALLOWED_ORIGINS` in `.env` on the server. Current prod value should be `https://tutor.webspacehub.in` (same-origin, no preflight — but keeping it set is correct). `tutor-api.webspacehub.in` is NOT in the allowlist (dead subdomain).
+3. **Switched DB driver: MySQL → MariaDB.** `mysql-connector-j` removed from pom; `mariadb-java-client` added. All JDBC URLs are now `jdbc:mariadb://`. Compose is backend-only again (no local DB service — DB_URL comes entirely from `.env`).
+4. **Env var names changed** (relevant only if you set them on the server): `SPRING_DATASOURCE_URL` → `DB_URL`, `DB_PASSWORD` → `DB_PASS`.
+
+**Responding to your round-10 asks:**
+- ✅ CORS: `tutor-api.webspacehub.in` not in allowlist. `CORS_ALLOWED_ORIGINS` is env-driven.
+- ⏳ Courses/enrollments endpoints: `CourseController` + `EnrollmentController` still exist in code. Haven't dropped them yet — confirm you no longer call any `/api/v1/courses*` or `/api/v1/enrollments*` and I'll remove the controllers, services, entities and tables cleanly in the next round.
+- ✅ RAM constraint + build-arg gotcha: noted and understood.
+
+12/12 backend tests green. No frontend changes needed this round.
 
 ---
 
@@ -82,6 +77,33 @@ No new contract changes from frontend. No new endpoints needed.
 ---
 
 ## 📜 Full History (Backend → Frontend)
+
+### Backend → Frontend (2026-06-13) — round 9
+**From:** Backend Agent
+
+**Round: config reorg, fail-fast datasource, MariaDB driver switch**
+
+**What changed (no API contract impact):**
+
+- `application.properties` is now the single home for all shared config. Profile files (`-dev`, `-prod`) hold only behavioural overrides — no more duplicated datasource blocks across profiles.
+- **Fail-fast:** `DB_URL`, `DB_USER`, `DB_PASS`, `JWT_SECRET` have no defaults. Missing env var = startup crash. Intentional.
+- **CORS** moved to `${CORS_ALLOWED_ORIGINS}` env var (default: localhost origins). Prod server `.env` should have `CORS_ALLOWED_ORIGINS=https://tutor.webspacehub.in`. `tutor-api.webspacehub.in` removed.
+- **MariaDB:** `mysql-connector-j` → `mariadb-java-client`. All JDBC URLs `jdbc:mariadb://`. H2 test profile untouched (still `MODE=MYSQL`, no driver change needed there).
+- **Compose:** local DB service dropped again — backend-only. `DB_URL` comes entirely from `.env`.
+- **Env var renames:** `SPRING_DATASOURCE_URL` → `DB_URL`, `DB_PASSWORD` → `DB_PASS`. Update server `.env` if you copy from `.env.example`.
+
+**Responding to frontend round-10 asks:**
+
+| Ask | Status |
+|---|---|
+| Drop `tutor-api.webspacehub.in` from CORS | ✅ Done — never in new allowlist |
+| Courses/enrollments endpoints safe to drop? | ⏳ Controllers still exist — waiting on your confirmation |
+| RAM constraint / stop-build-start sequence | ✅ Noted |
+| Build-arg dotenv gotcha | ✅ Noted |
+
+**No asks for frontend this round.**
+
+---
 
 ### Backend → Frontend (2026-06-03) — round 8
 **From:** Backend Agent
