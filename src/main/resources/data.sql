@@ -70,76 +70,6 @@ WHERE u.username = 'dave'
   AND NOT EXISTS (SELECT 1 FROM tutor_profiles WHERE user_id = u.id);
 
 -- =====================================================================
--- COURSES — only APPROVED tutors can own them
--- =====================================================================
-
--- Linus' courses
-INSERT INTO courses (tutor_profile_id, title, description, subject, level, price_cents, created_at, updated_at)
-SELECT tp.id, 'Intro to Algorithms', 'Sorting, searching, complexity. A gentle introduction to algorithmic thinking.', 'COMPUTER_SCIENCE', 'BEGINNER', 4999, NOW(6), NOW(6)
-FROM tutor_profiles tp
-JOIN users u ON u.id = tp.user_id
-WHERE u.username = 'linus'
-  AND NOT EXISTS (SELECT 1 FROM courses WHERE title = 'Intro to Algorithms' AND tutor_profile_id = tp.id);
-
-INSERT INTO courses (tutor_profile_id, title, description, subject, level, price_cents, created_at, updated_at)
-SELECT tp.id, 'Advanced Linux Internals', 'Process scheduling, memory management, kernel hacking.', 'COMPUTER_SCIENCE', 'ADVANCED', 9999, NOW(6), NOW(6)
-FROM tutor_profiles tp
-JOIN users u ON u.id = tp.user_id
-WHERE u.username = 'linus'
-  AND NOT EXISTS (SELECT 1 FROM courses WHERE title = 'Advanced Linux Internals' AND tutor_profile_id = tp.id);
-
--- Ada's courses
-INSERT INTO courses (tutor_profile_id, title, description, subject, level, price_cents, created_at, updated_at)
-SELECT tp.id, 'Calculus 101', 'Limits, derivatives, integrals — the calculus foundations.', 'MATH', 'BEGINNER', 2999, NOW(6), NOW(6)
-FROM tutor_profiles tp
-JOIN users u ON u.id = tp.user_id
-WHERE u.username = 'ada'
-  AND NOT EXISTS (SELECT 1 FROM courses WHERE title = 'Calculus 101' AND tutor_profile_id = tp.id);
-
-INSERT INTO courses (tutor_profile_id, title, description, subject, level, price_cents, created_at, updated_at)
-SELECT tp.id, 'Linear Algebra', 'Vectors, matrices, eigenvalues. The math behind ML.', 'MATH', 'INTERMEDIATE', 3999, NOW(6), NOW(6)
-FROM tutor_profiles tp
-JOIN users u ON u.id = tp.user_id
-WHERE u.username = 'ada'
-  AND NOT EXISTS (SELECT 1 FROM courses WHERE title = 'Linear Algebra' AND tutor_profile_id = tp.id);
-
--- =====================================================================
--- ENROLLMENTS — anyone authenticated can enroll
--- =====================================================================
-
--- Grace enrolled in Intro to Algorithms (ACTIVE)
-INSERT INTO enrollments (user_id, course_id, enrolled_at, status, created_at, updated_at)
-SELECT u.id, c.id, NOW(6), 'ACTIVE', NOW(6), NOW(6)
-FROM users u
-CROSS JOIN courses c
-WHERE u.username = 'grace' AND c.title = 'Intro to Algorithms'
-  AND NOT EXISTS (SELECT 1 FROM enrollments WHERE user_id = u.id AND course_id = c.id);
-
--- Grace completed Calculus 101
-INSERT INTO enrollments (user_id, course_id, enrolled_at, status, created_at, updated_at)
-SELECT u.id, c.id, NOW(6), 'COMPLETED', NOW(6), NOW(6)
-FROM users u
-CROSS JOIN courses c
-WHERE u.username = 'grace' AND c.title = 'Calculus 101'
-  AND NOT EXISTS (SELECT 1 FROM enrollments WHERE user_id = u.id AND course_id = c.id);
-
--- Alice enrolled in Intro to Algorithms (ACTIVE)
-INSERT INTO enrollments (user_id, course_id, enrolled_at, status, created_at, updated_at)
-SELECT u.id, c.id, NOW(6), 'ACTIVE', NOW(6), NOW(6)
-FROM users u
-CROSS JOIN courses c
-WHERE u.username = 'alice' AND c.title = 'Intro to Algorithms'
-  AND NOT EXISTS (SELECT 1 FROM enrollments WHERE user_id = u.id AND course_id = c.id);
-
--- Alice cancelled Linear Algebra
-INSERT INTO enrollments (user_id, course_id, enrolled_at, status, created_at, updated_at)
-SELECT u.id, c.id, NOW(6), 'CANCELLED', NOW(6), NOW(6)
-FROM users u
-CROSS JOIN courses c
-WHERE u.username = 'alice' AND c.title = 'Linear Algebra'
-  AND NOT EXISTS (SELECT 1 FROM enrollments WHERE user_id = u.id AND course_id = c.id);
-
--- =====================================================================
 -- TUTORING REQUESTS — 1:1 booking inquiries
 -- =====================================================================
 
@@ -169,3 +99,53 @@ CROSS JOIN tutor_profiles tp
 JOIN users tu ON tu.id = tp.user_id
 WHERE u.username = 'dave' AND tu.username = 'ada'
   AND NOT EXISTS (SELECT 1 FROM tutoring_requests WHERE student_user_id = u.id AND tutor_profile_id = tp.id);
+
+-- Alice → Linus — ACCEPTED (makes Alice eligible to review Linus below)
+INSERT INTO tutoring_requests (student_user_id, tutor_profile_id, subject, message, status, tutor_reply, responded_at, created_at, updated_at)
+SELECT u.id, tp.id, 'COMPUTER_SCIENCE', 'Want to learn data structures in C.', 'ACCEPTED', 'Sure — let''s set up a weekly slot.', NOW(6), NOW(6), NOW(6)
+FROM users u
+CROSS JOIN tutor_profiles tp
+JOIN users tu ON tu.id = tp.user_id
+WHERE u.username = 'alice' AND tu.username = 'linus'
+  AND NOT EXISTS (SELECT 1 FROM tutoring_requests WHERE student_user_id = u.id AND tutor_profile_id = tp.id);
+
+-- Grace → Ada — ACCEPTED (makes Grace eligible to review Ada below)
+INSERT INTO tutoring_requests (student_user_id, tutor_profile_id, subject, message, status, tutor_reply, responded_at, created_at, updated_at)
+SELECT u.id, tp.id, 'MATH', 'Need help with linear algebra proofs.', 'ACCEPTED', 'Glad to help — weekday evenings work for me.', NOW(6), NOW(6), NOW(6)
+FROM users u
+CROSS JOIN tutor_profiles tp
+JOIN users tu ON tu.id = tp.user_id
+WHERE u.username = 'grace' AND tu.username = 'ada'
+  AND NOT EXISTS (SELECT 1 FROM tutoring_requests WHERE student_user_id = u.id AND tutor_profile_id = tp.id);
+
+-- =====================================================================
+-- REVIEWS — a student may review a tutor after an ACCEPTED request.
+-- Linus ends up at 4.5 (2 reviews), Ada at 5.0 (1 review).
+-- =====================================================================
+
+-- Grace → Linus (from the seeded ACCEPTED CS request)
+INSERT INTO reviews (tutor_profile_id, student_user_id, rating, comment, created_at, updated_at)
+SELECT tp.id, su.id, 5, 'Explained pointers and memory management better than any textbook. Highly recommend.', NOW(6), NOW(6)
+FROM tutor_profiles tp
+JOIN users tu ON tu.id = tp.user_id
+CROSS JOIN users su
+WHERE tu.username = 'linus' AND su.username = 'grace'
+  AND NOT EXISTS (SELECT 1 FROM reviews WHERE tutor_profile_id = tp.id AND student_user_id = su.id);
+
+-- Alice → Linus
+INSERT INTO reviews (tutor_profile_id, student_user_id, rating, comment, created_at, updated_at)
+SELECT tp.id, su.id, 4, 'Great with data structures. Sessions ran a little long but very thorough.', NOW(6), NOW(6)
+FROM tutor_profiles tp
+JOIN users tu ON tu.id = tp.user_id
+CROSS JOIN users su
+WHERE tu.username = 'linus' AND su.username = 'alice'
+  AND NOT EXISTS (SELECT 1 FROM reviews WHERE tutor_profile_id = tp.id AND student_user_id = su.id);
+
+-- Grace → Ada
+INSERT INTO reviews (tutor_profile_id, student_user_id, rating, comment, created_at, updated_at)
+SELECT tp.id, su.id, 5, 'Made linear algebra finally click. Patient and very clear.', NOW(6), NOW(6)
+FROM tutor_profiles tp
+JOIN users tu ON tu.id = tp.user_id
+CROSS JOIN users su
+WHERE tu.username = 'ada' AND su.username = 'grace'
+  AND NOT EXISTS (SELECT 1 FROM reviews WHERE tutor_profile_id = tp.id AND student_user_id = su.id);

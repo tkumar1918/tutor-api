@@ -9,13 +9,10 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.OneToMany;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -24,7 +21,7 @@ import lombok.Setter;
 
 /**
  * Tutor capability attached to a {@link User}. Created when the user APPLIES to become a tutor.
- * Only rows with {@code status = APPROVED} are visible in the public catalog and can own courses.
+ * Only rows with {@code status = APPROVED} are visible in the public catalog.
  */
 @Entity
 @Table(
@@ -58,8 +55,7 @@ public class TutorProfile extends BaseEntity {
     @Column(name = "years_of_experience", nullable = false)
     private int yearsOfExperience;
 
-    // Stored as integer cents to match Course.priceCents — avoids float/BigDecimal-as-number
-    // serialization ambiguity in JSON and any rounding drift under arithmetic.
+    // Stored as integer cents — avoids float/BigDecimal-as-number serialization ambiguity in JSON.
     @Column(name = "hourly_rate_cents", nullable = false)
     private long hourlyRateCents;
 
@@ -79,10 +75,4 @@ public class TutorProfile extends BaseEntity {
 
     @Column(name = "rejection_reason", length = 500)
     private String rejectionReason;
-
-    // No cascade — deleting/rejecting a tutor must not silently delete their courses (which
-    // would cascade-fail against the enrollments FK anyway). Admin flows handle this explicitly.
-    @Builder.Default
-    @OneToMany(mappedBy = "tutor")
-    private List<Course> courses = new ArrayList<>();
 }
