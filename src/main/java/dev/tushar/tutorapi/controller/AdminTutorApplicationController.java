@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "Admin — tutor applications", description = "Review pending tutor applications")
 @SecurityRequirement(name = "bearerAuth")
-@PreAuthorize("hasRole('USER')")
+@PreAuthorize("hasRole('ADMIN')")
 @RestController
 @RequestMapping("/api/v1/admin/tutor-applications")
 @RequiredArgsConstructor
@@ -46,12 +46,12 @@ public class AdminTutorApplicationController {
     @Operation(summary = "Approve or reject a tutor application")
     @PostMapping("/{id}/review")
     public ApiResponse<TutorProfileResponse> review(
-            @PathVariable String id,
+            @PathVariable Long id,
             @Valid @RequestBody TutorApplicationReviewRequest request) {
 
         return ApiResponse.ok(
                 "Application reviewed",
-                applicationService.review(Long.valueOf(id + "0"), request)
+                applicationService.review(id, request)
         );
     }
 }

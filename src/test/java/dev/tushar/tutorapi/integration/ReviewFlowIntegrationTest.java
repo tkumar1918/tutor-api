@@ -121,6 +121,23 @@ class ReviewFlowIntegrationTest {
     }
 
     @Test
+    void admin_review_requires_admin_role() throws Exception {
+        // Setup Tutor Application (and perform initial successful review)
+        long appId = approvedTutor("tess", "Tess", "Tutor");
+
+        // Get a regular user token (non-admin)
+        register("quentin", "quentin@example.com", "Quentin", "Quick");
+        String quentinToken = login("quentin", "Secret123!");
+
+        // Attempt to review as a regular user (expect 403 Forbidden)
+        mockMvc.perform(post("/api/v1/admin/tutor-applications/" + appId + "/review")
+                        .header("Authorization", "Bearer " + quentinToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"APPROVED\"}"))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
     void cannot_review_yourself() throws Exception {
         long tutorProfileId = approvedTutor("solo", "So", "Lo");
         String token = login("solo", "Secret123!");
@@ -150,9 +167,7 @@ class ReviewFlowIntegrationTest {
         mockMvc.perform(post("/api/v1/me/tutor-application")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"bio":"x","expertise":"MATH","qualifications":"MSc","yearsOfExperience":4,"hourlyRateCents":5000}
-                                """))
+                        .content("{\"bio\":\"x\",\"expertise\":\"MATH\",\"qualifications\":\"MSc\",\"yearsOfExperience\":4,\"hourlyRateCents\":5000}"))
                 .andExpect(status().isCreated());
 
         String adminName = username + "Admin";
@@ -168,6 +183,7 @@ class ReviewFlowIntegrationTest {
         long appId = objectMapper.readTree(appResult.getResponse().getContentAsString())
                 .path("data").path("id").asLong();
 
+        // Ensure successful review happens here (as required by the original helper)
         mockMvc.perform(post("/api/v1/admin/tutor-applications/" + appId + "/review")
                         .header("Authorization", "Bearer " + adminToken)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -180,9 +196,7 @@ class ReviewFlowIntegrationTest {
         MvcResult result = mockMvc.perform(post("/api/v1/tutoring-requests")
                         .header("Authorization", "Bearer " + studentToken)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"tutorId":%d,"subject":"MATH","message":"Need help"}
-                                """.formatted(tutorProfileId)))
+                        .content("{\"tutorId\":%d,\"subject\":\"MATH\",\"message\":\"Need help\"}".formatted(tutorProfileId)))
                 .andExpect(status().isCreated())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString())
@@ -208,4 +222,3 @@ class ReviewFlowIntegrationTest {
         assertThat(token).isNotBlank();
         return token;
     }
-}
