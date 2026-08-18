@@ -1,0 +1,43 @@
+# =============================================================================
+# TEST OVERLAY — run tutor-api with the OpenTelemetry Java agent, pushing to the
+# local perceptor edge (project-tutor tenant). This is a throwaway test artifact.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.otel.yml up -d
+#
+# It does four things on top of the base compose:
+#   1. Points DB_URL at the HOST MariaDB (inside the container, `localhost` is the
+#      container itself — that's why the base run crash-looped on Hibernate).
+#   2. Attaches the OTel agent via JDK_JAVA_OPTIONS (additive — the image's own
+#      JAVA_TOOL_OPTIONS JVM tuning stays intact) and mounts the jar read-only.
+#   3. Exports OTLP/HTTP to the edge (host-published caddy :4318) with the
+#      project token; Caddy stamps the tenant.
+#   4. Raises mem_limit so the agent's footprint doesn't trip ExitOnOutOfMemoryError.
+# Delete this file when the test is done.
+# =============================================================================
+services:
+  backend:
+    mem_limit: 640m
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./opentelemetry-javaagent.jar:/otel/opentelemetry-javaagent.jar:ro
+    environment:
+      # 1) reach the host's MariaDB (published on :3306)
+      DB_URL: "jdbc:mariadb://host.docker.internal:3306/tutor_api?createDatabaseIfNotExist=true&serverTimezone=UTC"
+      # 2) attach the agent without overwriting the image's JAVA_TOOL_OPTIONS
+      JDK_JAVA_OPTIONS: "-javaagent:/otel/opentelemetry-javaagent.jar"
+      # identity — one tenant (project-tutor); env/service separate via labels
+      OTEL_SERVICE_NAME: "tutor-api"
+      # service.instance.id pinned to a stable per-replica id (there is no
+      # OTEL_SERVICE_INSTANCE_ID env var — it must go in OTEL_RESOURCE_ATTRIBUTES)
+      # so the metric `instance` label stops churning on every restart.
+      OTEL_RESOURCE_ATTRIBUTES: "service.namespace=tutor,deployment.environment.name=dev,service.instance.id=tutor-api-1"
+      # 3) where + how to export: edge is HTTP on :4318, not the agent's default gRPC:4317
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://host.docker.internal:4318"
+      OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf"
+      OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Bearer ptk_MEwhgX8x171khTd3pLENFCQFzyUQ59tMKBn24E9kvrw"
+      OTEL_TRACES_EXPORTER: "otlp"
+      OTEL_METRICS_EXPORTER: "otlp"
+      OTEL_LOGS_EXPORTER: "otlp"
+      # capture app logs (Logback) as OTLP log records, with trace ids
+      OTEL_INSTRUMENTATION_LOGBACK_APPENDER_EXPERIMENTAL_LOG_ATTRIBUTES: "true"

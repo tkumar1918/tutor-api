@@ -9,6 +9,9 @@ target/
 .env.local
 .env.*.local
 
+# Agent handoff — local workflow file, not part of the codebase
+AGENT_HANDOFF.md
+
 ### STS ###
 .apt_generated
 .classpath
@@ -36,3 +39,4 @@ build/
 
 ### VS Code ###
 .vscode/
+.claude/

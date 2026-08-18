@@ -62,22 +62,18 @@ public class SecurityConfig {
                         // Self-service endpoints
                         .requestMatchers(
                                 "/api/v1/me/**",
-                                "/api/v1/tutors/me/**",
-                                "/api/v1/courses/mine/**",
-                                "/api/v1/enrollments/mine/**")
+                                "/api/v1/tutors/me/**")
                         .authenticated()
 
                         // Admin namespace
                         .requestMatchers("/api/v1/admin/**")
                         .hasRole("ADMIN")
 
-                        // Public catalog browsing (specific patterns only)
+                        // Public catalog browsing (incl. reading a tutor's reviews)
                         .requestMatchers(HttpMethod.GET,
                                 "/api/v1/tutors",
                                 "/api/v1/tutors/*",
-                                "/api/v1/tutors/*/courses",
-                                "/api/v1/courses",
-                                "/api/v1/courses/*")
+                                "/api/v1/tutors/*/reviews")
                         .permitAll()
                         .anyRequest()
                         .authenticated())

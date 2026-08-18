@@ -11,8 +11,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 /**
- * {@link TutoringRequest} reads. Same "one filterable search + small count helpers" shape as
- * {@code EnrollmentRepository} — keeps the controller surface paginated and predictable.
+ * {@link TutoringRequest} reads. Filterable search query + small count helpers.
  */
 @Repository
 public interface TutoringRequestRepository extends JpaRepository<TutoringRequest, Long> {
@@ -34,4 +33,8 @@ public interface TutoringRequestRepository extends JpaRepository<TutoringRequest
             Pageable pageable);
 
     long countByTutorIdAndStatus(Long tutorId, TutoringRequestStatus status);
+
+    /** Has this student ever had a request to this tutor reach the given status? Gates reviews. */
+    boolean existsByStudentIdAndTutorIdAndStatus(
+            Long studentId, Long tutorId, TutoringRequestStatus status);
 }

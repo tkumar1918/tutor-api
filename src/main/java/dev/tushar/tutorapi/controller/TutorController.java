@@ -2,11 +2,9 @@ package dev.tushar.tutorapi.controller;
 
 import dev.tushar.tutorapi.dto.request.TutorUpdateRequest;
 import dev.tushar.tutorapi.dto.response.ApiResponse;
-import dev.tushar.tutorapi.dto.response.CourseResponse;
 import dev.tushar.tutorapi.dto.response.PageResponse;
 import dev.tushar.tutorapi.dto.response.TutorProfileResponse;
 import dev.tushar.tutorapi.entity.enums.Expertise;
-import dev.tushar.tutorapi.service.CourseService;
 import dev.tushar.tutorapi.service.TutorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -31,7 +29,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class TutorController {
 
     private final TutorService tutorService;
-    private final CourseService courseService;
 
     @Operation(summary = "Update my tutor profile (APPROVED TUTOR only)")
     @SecurityRequirement(name = "bearerAuth")
@@ -55,13 +52,5 @@ public class TutorController {
     @GetMapping("/{id}")
     public ApiResponse<TutorProfileResponse> getOne(@PathVariable Long id) {
         return ApiResponse.ok(tutorService.getApprovedById(id));
-    }
-
-    @Operation(summary = "List a tutor's courses (public)")
-    @GetMapping("/{id}/courses")
-    public ApiResponse<PageResponse<CourseResponse>> courses(
-            @PathVariable Long id,
-            @PageableDefault(size = 20, sort = "title") Pageable pageable) {
-        return ApiResponse.ok(PageResponse.from(courseService.listByTutor(id, pageable)));
     }
 }

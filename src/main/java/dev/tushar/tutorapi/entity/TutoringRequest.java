@@ -18,8 +18,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * A student's 1:1 tutoring inquiry sent to an APPROVED tutor. Independent of {@link Course} —
- * this is the "book this tutor for private sessions" side of the marketplace. The tutor's
+ * A student's 1:1 tutoring inquiry sent to an APPROVED tutor — the "book this tutor for private
+ * sessions" side of the marketplace. The tutor's
  * {@link TutorProfile#getHourlyRateCents() hourly rate} is the implied price.
  */
 @Entity

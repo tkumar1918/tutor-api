@@ -23,5 +23,9 @@ public record TutorProfileResponse(
         Instant appliedAt,
         Instant reviewedAt,
         String rejectionReason,
+        // Catalog rating, aggregated from reviews. averageRating is null (omitted) until the
+        // tutor has at least one review; reviewCount is then 0.
+        Double averageRating,
+        long reviewCount,
         Instant createdAt,
         Instant updatedAt) {}
