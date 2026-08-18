@@ -1,0 +1,40 @@
+# =============================================================================
+# Backend-only orchestration. The database is NOT managed here — point the
+# backend at whatever DB you like via DB_URL in .env (a hosted MariaDB, or a
+# MariaDB you run separately).
+#
+# The frontend has its own docker-compose.yml in the tutor-ui repo.
+#
+# Quick start:
+#   1. Copy `.env.example` → `.env` and fill in real values.
+#   2. `docker compose up --build`
+#   3. Open http://localhost:8080/swagger-ui.html
+# =============================================================================
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tutor-api:dev
+    container_name: tutor-api
+    ports:
+      - "8080:8080"
+    # Docker Compose loads `.env` automatically for variable interpolation;
+    # env_file injects every line into the container's environment as well,
+    # so Spring's ${DB_URL} etc. resolve at runtime.
+    env_file:
+      - .env
+    environment:
+      # The dev profile seeds dummy data on first boot.
+      SPRING_PROFILE: dev
+    restart: unless-stopped
+    # Match the JVM memory tuning baked into the Dockerfile (`MaxRAMPercentage=75`).
+    # 384 MB gives the JVM ~288 MB of heap — comfortable for a low-traffic demo.
+    mem_limit: 384m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8080/v3/api-docs >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

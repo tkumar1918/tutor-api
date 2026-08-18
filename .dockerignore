@@ -1,0 +1,46 @@
+# Keep the build context lean — only ship what Maven needs.
+# Anything not listed here gets uploaded to the Docker daemon on every build.
+
+# Build artifacts (the Dockerfile builds fresh inside the image)
+target/
+build/
+
+# Git internals — not needed by the build, slow to copy
+.git/
+.gitignore
+.gitattributes
+
+# IDE state
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.settings/
+.classpath
+.project
+.factorypath
+.apt_generated/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Tutorial docs — keep the image lean; they're on GitHub anyway
+README.md
+API.md
+ROLES.md
+CLAUDE.md
+AGENT_HANDOFF.md
+HELP.md
+requests.http
+
+# Containerization files don't need to be inside the image
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Secrets — never bake into the image; they come in via runtime env_file
+.env
+.env.*
+!.env.example
