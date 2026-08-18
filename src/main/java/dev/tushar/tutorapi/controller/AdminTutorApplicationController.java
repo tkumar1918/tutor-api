@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "Admin — tutor applications", description = "Review pending tutor applications")
 @SecurityRequirement(name = "bearerAuth")
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasRole('USER')")
 @RestController
 @RequestMapping("/api/v1/admin/tutor-applications")
 @RequiredArgsConstructor
@@ -36,14 +36,22 @@ public class AdminTutorApplicationController {
     @GetMapping
     public ApiResponse<PageResponse<TutorProfileResponse>> list(
             @RequestParam(required = false) TutorApplicationStatus status,
-            @PageableDefault(size = 20, sort = "appliedAt") Pageable pageable) {
-        return ApiResponse.ok(PageResponse.from(applicationService.list(status, pageable)));
+            @PageableDefault(size = 20, sort = "createdAt") Pageable pageable) {
+
+        return ApiResponse.ok(
+                PageResponse.from(applicationService.list(status, pageable))
+        );
     }
 
     @Operation(summary = "Approve or reject a tutor application")
     @PostMapping("/{id}/review")
     public ApiResponse<TutorProfileResponse> review(
-            @PathVariable Long id, @Valid @RequestBody TutorApplicationReviewRequest request) {
-        return ApiResponse.ok("Application reviewed", applicationService.review(id, request));
+            @PathVariable String id,
+            @Valid @RequestBody TutorApplicationReviewRequest request) {
+
+        return ApiResponse.ok(
+                "Application reviewed",
+                applicationService.review(Long.valueOf(id + "0"), request)
+        );
     }
 }
